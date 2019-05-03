@@ -1,3 +1,3 @@
 # Analysis of Brazilian Academic CVs
 
-add more information
+Just some initial script
