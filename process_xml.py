@@ -18,6 +18,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from pprint import pprint
 from random import shuffle
+from datetime import datetime
 
 import pandas as pd
 
@@ -33,7 +34,7 @@ output_dir = Path("output/")
 
 files = list(input_dir.glob("*.xml"))
 
-xml_tags = pd.read_csv("input/xml_tags.csv", sep=";", index_col="field_name")
+xml_tags = pd.read_csv("input/xml_tags.csv", index_col="field_name")
 
 phd_xpath = "DADOS-GERAIS/FORMACAO-ACADEMICA-TITULACAO/DOUTORADO"
 postdoc_xpath = "DADOS-GERAIS/FORMACAO-ACADEMICA-TITULACAO/POS-DOUTORADO"
@@ -44,24 +45,39 @@ publication_xpath = "PRODUCAO-BIBLIOGRAFICA/ARTIGOS-PUBLICADOS/ARTIGO-PUBLICADO"
 
 tables_fields = xml_tags.reset_index().groupby("file").field_name.unique().to_dict()
 
+list(tables_fields['phd'])
+
 # +
-sample_size = 100
+sample_size = 50
 
 r_file = open(str(output_dir / "researchers.csv"), "w")
 researchers = csv.writer(r_file, delimiter=',')
-researchers.writerow(["id"] + list(tables_fields['researcher']) + ["n_phds", "n_postdocs", "n_articles"])
+resercher_cols = ["id"] + list(tables_fields['researcher']) + ["update_year", "n_phds", "n_postdocs", "n_articles"]
+researchers.writerow(resercher_cols)
 
 phd_file = open(str(output_dir / "phds.csv"), "w")
 phds = csv.writer(phd_file, delimiter=',')
-phds.writerow(["id", "rid"] + list(tables_fields['phd']))
+phd_columns = list(tables_fields['phd'])
+
+phd_columns[2] = phd_columns[2][0:-1]
+phd_columns[3] = phd_columns[2] + "_code"
+del phd_columns[4]
+del phd_columns[4]
+
+phd_columns = ["id", "rid"] + phd_columns
+phds.writerow(phd_columns)
+
+phd_fields = list(tables_fields['phd'])
 
 postdoc_file = open(str(output_dir / "postdocs.csv"), "w")
 postdocs = csv.writer(postdoc_file, delimiter=',')
-postdocs.writerow(["id", "rid"] + list(tables_fields['postdoc']))
+postdoc_cols = ["id", "rid"] + list(tables_fields['postdoc'])
+postdocs.writerow(postdoc_cols)
 
 p_file = open(str(output_dir / "publications.csv"), "w")
 publications = csv.writer(p_file, delimiter=',')
-publications.writerow(["id", "rid"] + list(tables_fields['publication']))
+publication_cols = ["id", "rid"] + list(tables_fields['publication'])
+publications.writerow(publication_cols)
 
 failed_files = 1
 logfile =  open("log.txt", "w")
@@ -76,7 +92,7 @@ for f in tqdm(files[0:sample_size]):
     try:
         root = ET.parse(str(f)).getroot()
     except:
-        logfile.write("{}: Couldn't read '{}'\n".format(failed_files, f.name))
+        logfile.write("{} | #{}: Couldn't read '{}'\n".format(datetime.now().isoformat(), failed_files, f.name))
         failed_files = failed_files + 1
         continue
     
@@ -95,6 +111,7 @@ for f in tqdm(files[0:sample_size]):
             else:
                 val = None
         researcher_row.append(val)
+    researcher_row.append(researcher_row[1][-4:])
     
     
     ### PhDs
@@ -105,10 +122,18 @@ for f in tqdm(files[0:sample_size]):
         row = []
         row.append(phd_id)
         row.append(r_id)
-        for field in tables_fields['phd']:
+        for field in tables_fields['phd']:     
             attr = xml_tags.loc[field].attribute
             val = phd_node.get(attr)
             row.append(val)
+        
+        # merge/remove the two insitution_other/institution_other_code fields
+        if row[phd_fields.index("phd_institution_other2")+2] != "":
+            row[phd_columns.index("phd_institution_other")] = row[phd_fields.index("phd_institution_other2")+2]
+            row[phd_columns.index("phd_institution_other_code")] = row[phd_fields.index("phd_institution_other2_code")+2]
+        del row[phd_fields.index("phd_institution_other2")+2]
+        del row[phd_fields.index("phd_institution_other2_code")+1]
+        
         phd_id = phd_id + 1
         phds.writerow(row)
 
@@ -122,7 +147,7 @@ for f in tqdm(files[0:sample_size]):
         row.append(r_id)
         for field in tables_fields['postdoc']:
             attr = xml_tags.loc[field].attribute
-            val = phd_node.get(attr)
+            val = postdoc_node.get(attr)
             row.append(val)
         postdoc_id = postdoc_id + 1
         postdocs.writerow(row)
@@ -139,11 +164,29 @@ for f in tqdm(files[0:sample_size]):
             subtag = xml_tags.loc[field].field_tag
             attr = xml_tags.loc[field].attribute
             
-            node = pub_node.find(subtag)
-            if node is not None:
-                val = node.get(attr)
-            else:
+            if field in ["article_authors", "article_author_ids"]:
+                # Merge all author names
+                nodes = pub_node.findall(subtag)
+                vals = [str(node.get(attr)) for node in nodes]
+                val = " | ".join(vals)
+            elif field == "article_author_pos":
+                # extract the correct author order for the correct author
+                nodes = pub_node.findall(subtag)
                 val = None
+                name = researcher_row[resercher_cols.index('name')]
+                for node in nodes:
+                    if node.get("NOME-COMPLETO-DO-AUTOR") == name:
+                        val = node.get(attr)
+            else:
+                # all other fields
+                subtag = xml_tags.loc[field].field_tag
+                attr = xml_tags.loc[field].attribute
+
+                node = pub_node.find(subtag)
+                if node is not None:
+                    val = node.get(attr)
+                else:
+                    val = None
                 
             row.append(val)
         pub_id = pub_id + 1
