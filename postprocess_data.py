@@ -21,7 +21,7 @@ from pathlib import Path
 
 output_dir = Path("output/")
 
-researchers = pd.read_csv(output_dir / "researchers.csv", index="id", dtype={'ID_number':str})
+researchers = pd.read_csv(output_dir / "researchers.csv", index_col="id", dtype={'ID_number':str})
 phds = pd.read_csv(output_dir / "phds.csv", index_col="id")
 postdocs = pd.read_csv(output_dir / "postdocs.csv", index_col="id")
 publications = pd.read_csv(output_dir / "publications.csv", index_col="id")
