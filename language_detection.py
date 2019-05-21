@@ -50,7 +50,10 @@ for line in tqdm(input_reader, total=numlines):
     article_language = line['article_language']
     article_title = line['article_title']
     
-    detected_lang = langdetect.detect(article_title)
+    try:
+        detected_lang = langdetect.detect(article_title)
+    except:
+        detected_lang = "error"
     
     if article_language in lang_map:
         mapped_lang = lang_map[article_language]
